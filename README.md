@@ -197,8 +197,43 @@ Python, so they use no model calls.
 **One full query**
 
 ```
-$ python app.py ask '...'
+$ python app.py ask 'vintage graphic tee under $30'
 
+  Found:    Vintage Band Tee — Faded Grey — $19.0 on depop
+
+  Outfit:   Hey there! For nineteen dollars, this faded grey band tee is a total win. Since it is a size large, you have some great slouchy proportions to play with.
+
+Outfit one pairs the band tee with your baggy straight-leg jeans, dark wash and black combat boots. Throw your vintage black denim jacket on top and add the black crossbody bag. This works because the relaxed graphic tee and chunky boots lean right into that effortless grunge vibe while the dark denim ties the whole look together.
+
+Outfit two tucks the band tee into your wide-leg khaki trousers. Cinch the waist with your brown leather belt and slip on your chunky white sneakers. This balances the casual streetwear feel of the top with clean earth tones for an easy, high-low look.
+
+  Fit card: Found this perfectly faded grey band tee on Depop for nineteen bucks and it has the absolute best 90s skater grunge energy. Going to live in this oversized fit all fall, whether it's thrown on with combat boots or tucked into baggy trousers. 🎸✨ #thrifted #grunge
+
+2 model calls this session, 789 prompt + 215 output tokens
+```
+
+The same agent on a query nothing can match. It stops after the search, so
+there is no outfit and no fit card (`fit_card` stays `None`, and no model calls
+are made):
+
+```
+$ python app.py ask 'designer ballgown size XXS under $5'
+
+  I couldn't find anything for 'designer ballgown in size XXS under $5'.
+Here's what you could change:
+  - Try different keywords. Nothing in the listings matches 'designer ballgown', even with the size and price limits removed. Try the type of clothing, like 'jacket', 'jeans', 'dress' or 'sneakers'.
+
+0 model calls this session
+```
+
+The session after a happy-path run (from `python agent.py`, shortened with `...`),
+showing which item was selected and which steps ran. The full session printout is
+produced by `python agent.py`:
+
+```
+  steps run: ['parse_query', 'search_listings', 'suggest_outfit', 'create_fit_card']
+  "selected_item": { "id": "lst_033", "title": "Vintage Band Tee — Faded Grey", "price": 19.0, ... }
+  "error": null
 ```
 
 **The three tools, tested one at a time**
@@ -217,13 +252,43 @@ $ python -c "from tools import search_listings; print(search_listings('designer 
 ```
 
 ```
-$ python -c "from tools import suggest_outfit; ..."
+$ python -c "from tools import suggest_outfit; from utils.data_loader import get_example_wardrobe, load_listings; print(suggest_outfit(load_listings()[5], get_example_wardrobe()))"
+Hey there! That 2003 tour bootleg tee is such a cool find for twenty-four bucks. Here are two ways to style it using what you already own.
 
+First, pair the graphic tee with your baggy straight-leg jeans, dark wash and black combat boots. Layer the vintage black denim jacket on top and finish with the black crossbody bag. This works because it plays right into the grungy streetwear vibe, balancing the high waist of the jeans with the boxy tee.
+
+Second, try tucking the tee into your wide-leg khaki trousers and adding the chunky white sneakers and brown leather belt. This creates a great contrast between the edgy top and crisp, minimal trousers for an effortless everyday look.
+```
+
+The empty-wardrobe case of the same tool. It gives general advice instead of
+failing, and doesn't name any pieces because it doesn't know what the user owns:
+
+```
+$ python -c "from tools import suggest_outfit; from utils.data_loader import get_empty_wardrobe, load_listings; print(suggest_outfit(load_listings()[5], get_empty_wardrobe()))"
+That 2003 tour tee is an absolute score for twenty-four bucks. Since it has that worn-in grunge feel and a relaxed large fit, you can easily build some great streetwear looks with it.
+
+Try pairing it with baggy light-wash denim and chunky black skate shoes for an effortless nineties vibe. Another cool option is tucking it into a plaid pleated mini skirt with black combat boots and sheer tights.
+
+Stick to a color palette of blacks, whites, grays, and denim blues to keep the focus on the graphic. To elevate the style, throw on an oversized leather biker jacket or a distressed denim vest. Silver chain necklaces and a worn beanie will finish the outfit off perfectly.
 ```
 
 ```
-$ python -c "from tools import create_fit_card; ..."
+$ python -c "from tools import create_fit_card; from utils.data_loader import load_listings; print(create_fit_card('jeans and white sneakers', load_listings()[0]))"
+Obsessed with how perfectly broken-in these vintage Levi's are for running errands in the Lower East Side. Snagged them on depop for $38 and I'm living in them with my beat-up white sneakers all fall. 👖✨ #thriftfinds
+```
 
+The Milestone 4 variation check: the same `create_fit_card` call three times.
+With the cache on (the default) the three answers were word-for-word identical,
+because the starter hands back the answer it already has for an identical
+prompt. With `AI201_CACHE=0` they were three different captions:
+
+```
+$ AI201_CACHE=0 python -c "from tools import create_fit_card; from utils.data_loader import load_listings; print(create_fit_card('jeans and white sneakers', load_listings()[0]))"
+Finally tracked down the holy grail of slouchy 90s denim with these vintage Levi's. Snagged them on Depop for thirty eight bucks and the wash is just completely unmatched. Gonna live in these with beat-up white sneakers for Sunday morning coffee runs. #vintagelevis
+
+Finally found the perfect pair of vintage Levi's 501s and they fit like an absolute dream for lazy Saturday coffee runs. Snagged them on depop for thirty-eight bucks and honestly, nothing beats that broken-in 90s denim feel. Just throwing these on with beat-up white sneakers and a plain tee and I'm out the door. #thriftedstyle
+
+Finally tracked down the holy grail of 90s skater denim on Depop. These vintage Levi's 501s were thirty-eight bucks and fit like an absolute dream. Just gonna live in these with beat-up white sneakers all through autumn. 👖✨ #thrifted #grunge
 ```
 
 ---
