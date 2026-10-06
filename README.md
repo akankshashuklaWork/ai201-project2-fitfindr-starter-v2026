@@ -41,6 +41,13 @@
 
 <!-- Three or four sentences: what a user asks for, and what they get back. -->
 
+FitFindr is a small thrifting agent. You type what you want in plain language,
+like `vintage graphic tee under $30, size M`. It searches 40 secondhand listings
+for the best match, asks a model how that item would go with the clothes in your
+wardrobe, and then writes a short caption you could post about the find. If
+nothing matches, it doesn't carry on with nothing: it stops and tells you what
+to change (the size, the price limit, or the keywords).
+
 
 
 ---
@@ -142,9 +149,41 @@ on to `suggest_outfit`, then `create_fit_card`.
 
 **Where it lives:** `agent.py::run_agent`
 
-**How the query is parsed:** <!-- regex, string splitting, or asking the model — say which -->
+**How the query is parsed:** With regular expressions, not the model
+(`agent.py::_parse_query`). It looks for a phrase like `size M` or `size 8.5`
+for the size, and a phrase like `under $30`, `max 40` or a bare `$30` for the
+price. Both phrases are cut out, and whatever is left becomes the description.
+A size or price that isn't mentioned stays `None`. Known limits: a size is only
+found after the word "size" (a bare "M" is not read as a size), and "medium" or
+"large" count as sizes only when they follow the word "size".
 
-**What moves through the session:** <!-- which fields, in what order -->
+**What moves through the session:** In order:
+1. `parsed` (description, size, max_price) from `_parse_query`
+2. `search_results` (the list from `search_listings`)
+3. `selected_item` (the first result, only if the list wasn't empty)
+4. `outfit_suggestion` (from `suggest_outfit`, which reads `selected_item` and
+   `wardrobe` out of the session)
+5. `fit_card` (from `create_fit_card`, which reads `outfit_suggestion` and
+   `selected_item` out of the session)
+
+`error` is set only when the search is empty. I also added a `steps` field: the
+names of the steps the loop ran, in order. A full run gives
+`['parse_query', 'search_listings', 'suggest_outfit', 'create_fit_card']`; an
+empty search gives `['parse_query', 'search_listings', 'diagnose_empty_search']`,
+so the branch is visible in the session.
+
+**What the loop looks like:** a `while` loop in `run_agent`. A variable called
+`next_step` holds the name of the step to run, and each step decides what
+`next_step` becomes based on what it just got back. The branch is the
+`if not results:` line in the `search` step. `trace.check_iterations` runs on
+every pass as the stop condition.
+
+**The empty-search message:** `agent.py::_explain_empty_search` re-runs the
+search with the size filter removed, then with the price filter removed, to
+find which one was too strict, and says so (for example "Raise your price
+limit. The best match is ... at $48, above your $10 limit."). If neither filter
+is the cause, it asks for different keywords. These extra searches are plain
+Python, so they use no model calls.
 
 ---
 
@@ -165,8 +204,16 @@ $ python app.py ask '...'
 **The three tools, tested one at a time**
 
 ```
-$ python -c "from tools import search_listings; print(search_listings('graphic tee', max_price=30))"
+$ python -c "from tools import search_listings; print([(r['title'], r['price'], r['size']) for r in search_listings('graphic tee', max_price=30)])"
+[('Graphic Tee — 2003 Tour Bootleg Style', 24.0, 'L'), ('Y2K Baby Tee — Butterfly Print', 18.0, 'S/M'), ('Vintage Band Tee — Faded Grey', 19.0, 'L'), ('Mesh Long-Sleeve Top — Black', 15.0, 'S/M'), ('Vintage Graphic Hoodie — Faded Black', 26.0, 'L'), ('Oversized Crewneck Sweatshirt — Vintage Navy', 20.0, 'XL (fits oversized)'), ('Low-Rise Cargo Pants — Khaki', 27.0, 'W29')]
+```
 
+The empty case of the same tool (nothing matches, so it returns an empty list,
+not `None`):
+
+```
+$ python -c "from tools import search_listings; print(search_listings('designer ballgown', size='XXS', max_price=5))"
+[]
 ```
 
 ```
