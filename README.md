@@ -302,17 +302,44 @@ Finally tracked down the holy grail of 90s skater denim on Depop. These vintage 
      "I gave Claude my search_listings spec. It returned None on no match
      instead of an empty list, so I changed it" is the level we want. -->
 
-**Moment 1**
+**Moment 1: the message for an empty search**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* I gave Claude the assignment and asked it to help me build
+  the planning loop with beginner-friendly comments. Milestone 5 says the
+  message for an empty search must name what the user could change, so "No
+  results" isn't enough.
+- *What came back:* A loop whose branch (`if not results`) sets
+  `session["error"]` using a helper, `_explain_empty_search`, that re-runs the
+  search without the size filter and then without the price filter to find which
+  one was too strict. When Claude ran it on test queries, it found two
+  problems. The parser left a dangling word, so "90s track jacket in size M"
+  produced a message saying "in in size M". And the tips pointed at loose
+  matches: it suggested a bucket hat for a track-jacket search, and the price tip
+  used the cheapest match, which was a slip dress.
+- *What I changed:* The parser now strips small connector words ("in", "for",
+  "a") from the end of the description. The two tips now name the best match
+  with its title, size and price, so the user can see what the advice is pointing
+  at. (Claude made these changes in `agent.py`.)
 
-**Moment 2**
+**Moment 2: the fit card prices**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* `create_fit_card`, a caption that mentions the item, its
+  price and its platform once each, and then the Milestone 4 check of running it
+  three times on the same item.
+- *What came back:* Three word-for-word identical captions, because the
+  starter's cache was handing back the same answer. With `AI201_CACHE=0` they
+  were three different captions. But across the five distinct captions Claude
+  generated, only one wrote the price in digits ("$38"). The others wrote it as
+  words ("thirty eight bucks", "nineteen bucks").
+- *What I changed:* I left the prompt as it is on purpose, and turned the problem
+  into criterion 4 in `criteria.md` (the card must show the price in digits, in
+  5 of 5 cards), so Unit 4 can test and diagnose it.
+
+**A note on `criteria.md`:** I chose the targets (for example 5 of 5 across five
+different queries for criterion 3, and testing the whole agent for criterion 5)
+and the reasons came from my answers. Claude wrote the wording from my choices.
+Claude also found, when asked to attack the criteria, the places where a tester
+would have to guess (for example what counts as a "try").
 
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
