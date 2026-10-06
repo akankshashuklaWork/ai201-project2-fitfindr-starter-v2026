@@ -25,9 +25,9 @@ Given a query that matches at least one listing, the agent completes all three
 tool calls and returns a fit card — in at least 4 of 5 tries.
 
 **Why this target:**
-<!-- Why 4 of 5 and not 5 of 5? Something about your search, probably —
-     "my search is a plain keyword match and some phrasings will miss" is a
-     real answer. -->
+I picked 4 of 5 and not 5 of 5 because my search is a loose keyword match, so
+some phrasings will miss. For example, "sweater" and "trainers" find nothing in
+the listings, so a query that sounds reasonable can still end with no fit card.
 
 ---
 
@@ -37,65 +37,59 @@ Given a query that matches no listings, the agent stops before calling
 `suggest_outfit` and returns a message naming what to change — 5 of 5 tries.
 
 **Why this target:**
-<!-- Why is 5 of 5 reasonable here when criterion 1 isn't? What's different
-     about this path? -->
+I picked 5 of 5 because no model runs on this path. The agent runs
+`search_listings` (plain Python), sees the empty list and stops, so
+`suggest_outfit` and `create_fit_card` never run. With no model call there is no
+randomness, rate limit or model failure that could make it miss, so one miss
+would be a real bug.
 
 ---
 
-## 3. Something about state
+## 3. The item search found is the item the next tool received
 
-<!-- YOU WRITE THIS ONE.
-
-     How would you know that the item your search found is the same item the
-     next tool received? Name something countable or observable.
-
-     This is the criterion people find hardest, because state failure doesn't
-     look like state failure — it looks like a tool problem. Something that
-     compares session["selected_item"] against what actually reached
-     suggest_outfit is the shape you're after. -->
-
-
+Given five different queries that each match at least one listing, the id of the
+item passed into `suggest_outfit` equals `session["selected_item"]["id"]` in 5
+of 5 runs. (The test records the item `suggest_outfit` was called with, and
+compares its id to the one in the session.)
 
 **Why this target:**
-
-
-
----
-
-## 4. Something about the fit card
-
-<!-- YOU WRITE THIS ONE.
-
-     The fit card calls a model, so the same input can produce different words
-     each time. That's not a bug — it's the nature of the tool. So what would
-     make it acceptable?
-
-     Think about what you'd actually be unhappy to see. A caption that never
-     mentions the price? Two different items producing the same opening
-     sentence? A card longer than a caption anyone would post? Any of those can
-     be turned into a number. -->
-
-
-
-**Why this target:**
-
+I picked 5 of 5 because handing the item from one tool to the next is plain code
+with no randomness, so one mismatch would be a real bug, not noise. I use five
+different queries and not one query repeated, because the same query five times
+would only show that the code gives the same answer each time. It would not show
+that it works for different items.
 
 
 ---
 
-## 5. Your choice
+## 4. The fit card shows the price as digits
 
-<!-- YOU WRITE THIS ONE TOO.
-
-     Pick something you actually care about getting right. Speed, the empty
-     wardrobe path, what happens when the model can't be reached, whether the
-     search respects a price ceiling — anything, as long as it names a number
-     or an observable outcome. -->
-
-
+For five different items, each fit card shows the item's price as a dollar amount
+in digits (for example "$19") in 5 of 5 cards. "Nineteen bucks" does not count.
 
 **Why this target:**
+I will accept "$19" but not "nineteen bucks", because a price in digits is
+something a person can plainly check for. I picked 5 of 5 even though the model
+varies and may miss, because I don't want a target so easy I can't miss it, and a
+miss will be something to diagnose. I use five different items so the result
+doesn't depend on one item.
 
+
+---
+
+## 5. The price ceiling is respected, whichever way it's worded
+
+Given five typed requests that each state a price ceiling in a different wording
+(for example "under $30", "$30 max" and "under thirty dollars"), every listing in
+`session["search_results"]` costs at most that ceiling, in 5 of 5 requests.
+
+**Why this target:**
+I am testing the whole agent, not just `search_listings`, because the search tool
+on its own never went over a ceiling in my checks. What can go wrong is the
+parser failing to read the ceiling out of a sentence: it only reads digits, so
+"under thirty dollars" becomes no ceiling at all. I picked 5 of 5 because a
+shopper who states a budget expects it to hold, and I expect I may miss it on
+some wordings and will diagnose why.
 
 
 ---
