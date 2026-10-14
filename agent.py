@@ -32,8 +32,12 @@ import re  # regular expressions: used to pull a size and a price out of text
 
 import config
 import trace
-from tools import search_listings, suggest_outfit, create_fit_card
-from generate import ModelUnavailable  # noqa: F401 — you'll use this in unit 4
+# search_listings now goes out through MCP instead of being called directly.
+# tools.py still has the real implementation — mcp_server.py wraps it, and
+# mcp_client.py is how we reach that wrapper from here.
+from tools import search_listings, suggest_outfit, create_fit_card  # noqa: F401 — search_listings kept for _explain_empty_search's re-searches below
+from mcp_client import call_tool, MCPError
+from generate import ModelUnavailable
 
 
 # ── session state ─────────────────────────────────────────────────────────────
@@ -257,18 +261,36 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         if next_step == "parse":
             session["parsed"] = _parse_query(session["query"])
             session["steps"].append("parse_query")
+            trace.step("parse_query", inputs=session["query"], returned=session["parsed"])
             next_step = "search"
 
         # ── Step: search (this one contains THE BRANCH) ──────────────────────
         elif next_step == "search":
             parsed = session["parsed"]
-            results = search_listings(
-                description=parsed["description"],
-                size=parsed["size"],
-                max_price=parsed["max_price"],
-            )
+            # search_listings now runs through our MCP server instead of being
+            # called directly — call_tool talks to mcp_server.py and hands back
+            # the exact same list of dicts search_listings always returned.
+            try:
+                results = call_tool("search_listings", {
+                    "description": parsed["description"],
+                    "size": parsed["size"],
+                    "max_price": parsed["max_price"],
+                })
+            except MCPError as exc:
+                # The MCP server couldn't be reached or refused the call. This
+                # is a different failure from "no listings matched" below, so
+                # it gets its own message instead of being mistaken for one.
+                session["steps"].append("search_listings (via MCP) — failed")
+                session["error"] = (
+                    "Couldn't search listings right now: the MCP server "
+                    f"didn't respond as expected ({exc}). Try again in a moment."
+                )
+                trace.step("search_listings (via MCP)", inputs=parsed, note="MCP call failed")
+                next_step = "done"
+                continue
             session["search_results"] = results
-            session["steps"].append("search_listings")
+            session["steps"].append("search_listings (via MCP)")
+            trace.step("search_listings (via MCP)", inputs=parsed, returned=results)
 
             # Debugging tip: if this branch ever does something you didn't
             # expect, print what it is checking, right here, before the `if`:
@@ -283,6 +305,7 @@ def run_agent(query: str, wardrobe: dict) -> dict:
                 # We do NOT call suggest_outfit with nothing to style.
                 session["steps"].append("diagnose_empty_search")
                 session["error"] = _explain_empty_search(parsed)
+                trace.step("diagnose_empty_search", inputs=parsed, note="empty search, stopping before suggest_outfit")
                 next_step = "done"
             else:
                 # Path B — found something. Pick the best match (the tool sorts
@@ -294,20 +317,44 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         elif next_step == "outfit":
             # Notice both inputs come OUT OF THE SESSION, not from a variable
             # left over from the search step. That is the "session state" rule.
-            session["outfit_suggestion"] = suggest_outfit(
-                session["selected_item"],
-                session["wardrobe"],
-            )
+            try:
+                session["outfit_suggestion"] = suggest_outfit(
+                    session["selected_item"],
+                    session["wardrobe"],
+                )
+            except ModelUnavailable as exc:
+                # Bad key, no network, or a model name that doesn't resolve.
+                # Say so plainly instead of letting the exception crash the run.
+                session["steps"].append("suggest_outfit — failed")
+                session["error"] = (
+                    f"The styling model couldn't be reached ({exc}). "
+                    "Check your API key and connection, then try again."
+                )
+                trace.step("suggest_outfit", inputs=session["selected_item"], note="model unavailable")
+                next_step = "done"
+                continue
             session["steps"].append("suggest_outfit")
+            trace.step("suggest_outfit", inputs=session["selected_item"], returned=session["outfit_suggestion"])
             next_step = "fit_card"
 
         # ── Step: fit card ───────────────────────────────────────────────────
         elif next_step == "fit_card":
-            session["fit_card"] = create_fit_card(
-                session["outfit_suggestion"],
-                session["selected_item"],
-            )
+            try:
+                session["fit_card"] = create_fit_card(
+                    session["outfit_suggestion"],
+                    session["selected_item"],
+                )
+            except ModelUnavailable as exc:
+                session["steps"].append("create_fit_card — failed")
+                session["error"] = (
+                    f"The caption model couldn't be reached ({exc}). "
+                    "Check your API key and connection, then try again."
+                )
+                trace.step("create_fit_card", inputs=session["outfit_suggestion"], note="model unavailable")
+                next_step = "done"
+                continue
             session["steps"].append("create_fit_card")
+            trace.step("create_fit_card", inputs=session["outfit_suggestion"], returned=session["fit_card"])
             next_step = "done"
 
         # ── Anything else is a typo in this function, so fail loudly ─────────
